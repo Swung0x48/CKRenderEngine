@@ -373,6 +373,14 @@ if (CKRE_BUILD_HEADLESS)
     )
     ckre_configure_target(CK2_3DHeadlessStatic)
     target_compile_definitions(CK2_3DHeadlessStatic PRIVATE CKRE_HEADLESS=1)
+    if (MSVC)
+        # Make accidental Win32 UI/GDI calls fail at the final consumer link.
+        # The ordinary shared/static renderer targets retain their platform UI
+        # integration and are intentionally not subject to this restriction.
+        target_link_options(CK2_3DHeadlessStatic INTERFACE
+                /NODEFAULTLIB:user32.lib
+                /NODEFAULTLIB:gdi32.lib)
+    endif ()
     set_target_properties(CK2_3DHeadlessStatic PROPERTIES
             ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     )

@@ -1,6 +1,6 @@
 #include "RCKRenderContext.h"
 
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(CKRE_HEADLESS)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -919,7 +919,7 @@ CKERROR RCKRenderContext::BackToFront(CK_RENDER_FLAGS Flags) {
 
     // Screen dump functionality (Ctrl+Alt+F10)
     // VK_CONTROL=17, VK_MENU(Alt)=18, VK_F10=121
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(CKRE_HEADLESS)
     if (m_RenderManager->m_EnableScreenDump.Value &&
         GetAsyncKeyState(VK_CONTROL) &&
         GetAsyncKeyState(VK_MENU) &&
