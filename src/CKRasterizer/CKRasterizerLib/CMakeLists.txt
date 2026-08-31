@@ -23,12 +23,12 @@ target_include_directories(CKRasterizerLib
 )
 
 set(_ckre_rasterizer_ck2_dep CK2)
-if (CKRE_BUILD_STATIC AND TARGET CK2Static)
+if ((CKRE_BUILD_STATIC OR CKRE_BUILD_HEADLESS) AND TARGET CK2Static)
     set(_ckre_rasterizer_ck2_dep CK2Static)
 endif ()
 
 set(_ckre_rasterizer_vxmath_dep VxMath)
-if (CKRE_BUILD_STATIC AND TARGET VxMathStatic)
+if ((CKRE_BUILD_STATIC OR CKRE_BUILD_HEADLESS) AND TARGET VxMathStatic)
     set(_ckre_rasterizer_vxmath_dep VxMathStatic)
 endif ()
 

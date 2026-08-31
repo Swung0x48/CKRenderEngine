@@ -2,20 +2,22 @@
 #include <math.h>
 #include <string.h>
 
-#ifdef _WIN32
+#if !defined(CK_LIB) && defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
-#else
+#elif !defined(CK_LIB)
 #include <dlfcn.h>
 #endif
 
 #include "CKGlobals.h"
 #include "CKPluginManager.h"
 #include "CKRasterizer.h"
+#ifndef CK_LIB
 #include "CKException.h"
 #include "VxWindowFunctions.h"
+#endif
 
 #include "RCKRenderManager.h"
 #include "RCKRenderContext.h"
@@ -65,6 +67,27 @@ CKPluginInfo g_PluginInfo;
 XClassArray<CKRasterizerInfo> g_RasterizersInfo;
 
 void ReleaseRasterizers();
+
+static void RegisterNullRasterizer()
+{
+    for (CKRasterizerInfo *it = g_RasterizersInfo.Begin();
+         it != g_RasterizersInfo.End(); ++it) {
+        if (it->StartFct == CKNULLRasterizerStart &&
+            it->CloseFct == CKNULLRasterizerClose)
+            return;
+    }
+
+    CKRasterizerInfo info;
+    info.StartFct = CKNULLRasterizerStart;
+    info.CloseFct = CKNULLRasterizerClose;
+    info.DllInstance = nullptr;
+    info.DllName = "";
+    info.Desc = "NULL Rasterizer";
+    info.InterfaceRevision = CKRST_INTERFACE_REVISION;
+    g_RasterizersInfo.PushBack(info);
+}
+
+#if !defined(CK_LIB)
 
 static XString CKRenderEngineModulePath()
 {
@@ -130,19 +153,21 @@ void RegisterRasterizer(const char *dll) {
     g_RasterizersInfo.PushBack(info);
 }
 
+#endif // !CK_LIB
+
 void EnumerateRasterizers() {
     if (!g_EnumerationDone) {
-#ifdef CK_LIB
-        extern void CKBgfxRasterizerGetInfo(CKRasterizerInfo *info);
+#if defined(CKRE_STATIC_BGFX_AUTOREGISTER)
+        extern void CKREGetBuiltInBgfxRasterizerInfo(CKRasterizerInfo *info);
         CKRasterizerInfo info;
-        CKBgfxRasterizerGetInfo(&info);
+        CKREGetBuiltInBgfxRasterizerInfo(&info);
         if (info.InterfaceRevision == CKRST_INTERFACE_REVISION &&
             info.StartFct && info.CloseFct) {
             info.DllInstance = nullptr;
             info.DllName = "CKBgfxRasterizer";
             g_RasterizersInfo.PushBack(info);
         }
-#else
+#elif !defined(CK_LIB)
         XString moduleName = CKRenderEngineModulePath();
         CKPathSplitter ps(moduleName.CStr());
 
@@ -181,17 +206,10 @@ void EnumerateRasterizers() {
             file = dpBgfx.GetNextFile();
         }
 
-        if (g_RasterizersInfo.Size() == 0) {
-            CKRasterizerInfo info;
-            info.StartFct = CKNULLRasterizerStart;
-            info.CloseFct = CKNULLRasterizerClose;
-            info.DllInstance = nullptr;
-            info.DllName = "";
-            info.Desc = "NULL Rasterizer";
-            info.InterfaceRevision = CKRST_INTERFACE_REVISION;
-            g_RasterizersInfo.PushBack(info);
-        }
 #endif
+
+        if (g_RasterizersInfo.Size() == 0)
+            RegisterNullRasterizer();
 
         g_EnumerationDone = TRUE;
     }

@@ -1,3 +1,34 @@
+if (CKRE_BUILD_HEADLESS_TESTS)
+    if (NOT TARGET CK2_3DHeadlessStatic)
+        message(FATAL_ERROR
+                "CKRE_BUILD_HEADLESS_TESTS requires CKRE_BUILD_HEADLESS=ON")
+    endif ()
+
+    add_executable(ckre_headless_smoke headless_runtime_smoke.cpp)
+    target_include_directories(ckre_headless_smoke PRIVATE
+            ${CKRE_INCLUDE_DIR}
+    )
+    target_link_libraries(ckre_headless_smoke PRIVATE
+            CK2_3DHeadlessStatic
+    )
+    set_target_properties(ckre_headless_smoke PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    )
+    add_custom_command(TARGET ckre_headless_smoke POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/../src/CK2_3D.ini"
+            "$<TARGET_FILE_DIR:ckre_headless_smoke>/CK2_3D.ini"
+            VERBATIM
+    )
+    add_test(NAME CKRenderEngineHeadlessSmoke
+            COMMAND $<TARGET_FILE:ckre_headless_smoke>)
+    set_tests_properties(CKRenderEngineHeadlessSmoke PROPERTIES TIMEOUT 60)
+endif ()
+
+if (NOT CKRE_BUILD_TESTS)
+    return()
+endif ()
+
 function(ckre_configure_test_target TARGET_NAME)
     target_include_directories(${TARGET_NAME} PRIVATE
         ${CKRE_INCLUDE_DIR}

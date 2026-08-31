@@ -41,10 +41,10 @@
 #include "CKFFUniformState.h"
 #include "CKDrawAnnotation.h"
 
-#include <SDL3/SDL_timer.h>
-
+#include <chrono>
 #include <stdio.h>
 #include <string.h>
+#include <thread>
 
 CK_CLASSID RCKRenderContext::m_ClassID = CKCID_RENDERCONTEXT;
 
@@ -163,7 +163,8 @@ struct CKPendingScreenCaptureState {
     XArray<CKPendingScreenCapture *> Outstanding;
 };
 
-static const Uint64 CK_SCREEN_CAPTURE_WAIT_TIMEOUT_MS = 30000u;
+static constexpr std::chrono::milliseconds CK_SCREEN_CAPTURE_WAIT_TIMEOUT(30000);
+static constexpr std::chrono::milliseconds CK_SCREEN_CAPTURE_POLL_INTERVAL(1);
 
 static void ReleaseScreenCaptureState(CKPendingScreenCaptureState *state) {
     if (!state)
@@ -2758,23 +2759,27 @@ int RCKRenderContext::DumpToMemory(const VxRect *iRect, VXBUFFER_TYPE buffer, Vx
         return FALSE;
     }
 
-    const Uint64 startTime = SDL_GetTicks();
+    const std::chrono::steady_clock::time_point startTime =
+        std::chrono::steady_clock::now();
     while (!IsMemoryScreenCaptureDone(state)) {
         result = m_RasterizerContext->Frame(
             CKRST_FRAME_SYNC_PRESERVE_PRESENT, CKRST_FRAME_NONE);
         if (result != CK_OK)
             break;
-        if (SDL_GetTicks() - startTime >= CK_SCREEN_CAPTURE_WAIT_TIMEOUT_MS)
+        if (std::chrono::steady_clock::now() - startTime >=
+            CK_SCREEN_CAPTURE_WAIT_TIMEOUT)
             break;
-        SDL_Delay(1);
+        std::this_thread::sleep_for(CK_SCREEN_CAPTURE_POLL_INTERVAL);
     }
 
     if (!IsMemoryScreenCaptureDone(state)) {
         m_RasterizerContext->CancelScreenShots(state);
-        const Uint64 cancelTime = SDL_GetTicks();
+        const std::chrono::steady_clock::time_point cancelTime =
+            std::chrono::steady_clock::now();
         while (!IsMemoryScreenCaptureDone(state) &&
-               SDL_GetTicks() - cancelTime < CK_SCREEN_CAPTURE_WAIT_TIMEOUT_MS)
-            SDL_Delay(1);
+               std::chrono::steady_clock::now() - cancelTime <
+                   CK_SCREEN_CAPTURE_WAIT_TIMEOUT)
+            std::this_thread::sleep_for(CK_SCREEN_CAPTURE_POLL_INTERVAL);
     }
 
     if (!IsMemoryScreenCaptureDone(state)) {
@@ -3108,7 +3113,8 @@ void RCKRenderContext::CancelPendingScreenCaptures() {
             continue;
         }
 
-        const Uint64 waitStart = SDL_GetTicks();
+        const std::chrono::steady_clock::time_point waitStart =
+            std::chrono::steady_clock::now();
         for (;;) {
             CKBOOL outstanding = FALSE;
             {
@@ -3118,11 +3124,12 @@ void RCKRenderContext::CancelPendingScreenCaptures() {
             }
             if (!outstanding)
                 break;
-            if (SDL_GetTicks() - waitStart >= CK_SCREEN_CAPTURE_WAIT_TIMEOUT_MS) {
+            if (std::chrono::steady_clock::now() - waitStart >=
+                CK_SCREEN_CAPTURE_WAIT_TIMEOUT) {
                 CK_LOG_FMT("Capture", "timed out cancelling pending screenshot");
                 return;
             }
-            SDL_Delay(1);
+            std::this_thread::sleep_for(CK_SCREEN_CAPTURE_POLL_INTERVAL);
         }
     }
 }

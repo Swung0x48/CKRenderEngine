@@ -214,13 +214,15 @@ if (CKRE_ENABLE_FFP_DIAGNOSTICS)
 endif ()
 
 # Add the bgfx rasterizer plugin targets when requested.
-if (CKRE_BUILD_BGFX_RASTERIZER AND (CKRE_BUILD_SHARED OR CKRE_BUILD_STATIC))
+if (CKRE_NEEDS_BGFX)
     add_subdirectory(CKRasterizer)
-elseif (CKRE_BUILD_SHARED OR CKRE_BUILD_STATIC)
+elseif (CKRE_BUILD_SHARED OR CKRE_BUILD_STATIC OR CKRE_BUILD_HEADLESS)
     add_subdirectory(CKRasterizer/CKRasterizerLib)
 endif ()
 
-find_package(Python3 COMPONENTS Interpreter)
+if (CKRE_NEEDS_BGFX)
+    find_package(Python3 COMPONENTS Interpreter)
+endif ()
 set(CKRE_SHADER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_ff_3d.sc
@@ -234,7 +236,7 @@ set(CKRE_SHADER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/compile_shaders.py
 )
 
-if (CKRE_GENERATE_SHADERS AND Python3_Interpreter_FOUND AND CKRE_SHADERC_COMMAND)
+if (CKRE_NEEDS_BGFX AND CKRE_GENERATE_SHADERS AND Python3_Interpreter_FOUND AND CKRE_SHADERC_COMMAND)
     set(CKRE_SHADER_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CK2_3D_shaders.stamp")
     add_custom_command(OUTPUT "${CKRE_SHADER_STAMP}"
             COMMAND ${Python3_EXECUTABLE}
@@ -250,7 +252,7 @@ if (CKRE_GENERATE_SHADERS AND Python3_Interpreter_FOUND AND CKRE_SHADERC_COMMAND
             DEPENDS "${CKRE_SHADER_STAMP}"
             SOURCES ${CKRE_SHADER_SOURCES}
     )
-elseif (CKRE_GENERATE_SHADERS)
+elseif (CKRE_NEEDS_BGFX AND CKRE_GENERATE_SHADERS)
     message(WARNING "CK2_3D_shaders target disabled: Python3 or bgfx shaderc target not available")
 else ()
     message(STATUS "CK2_3D_shaders target disabled: using checked-in generated shader headers")
@@ -291,7 +293,6 @@ function(ckre_configure_target TARGET_NAME)
     target_link_libraries(${TARGET_NAME} PRIVATE CKRasterizerLib)
 
     ckre_apply_diagnostic_definitions(${TARGET_NAME} PRIVATE)
-    target_link_libraries(${TARGET_NAME} PRIVATE SDL3::SDL3)
     if (CMAKE_DL_LIBS)
         target_link_libraries(${TARGET_NAME} PRIVATE ${CMAKE_DL_LIBS})
     endif ()
@@ -334,9 +335,16 @@ endif ()
 if (CKRE_BUILD_STATIC)
     set(CKRE_STATIC_SOURCES ${CKRE_SOURCES})
     list(FILTER CKRE_STATIC_SOURCES EXCLUDE REGEX "\\.rc$")
+    if (CKRE_NEEDS_BGFX AND TARGET CKBgfxRasterizerStatic)
+        list(APPEND CKRE_STATIC_SOURCES CKBuiltinBgfxRasterizer.cpp)
+    endif ()
 
     add_library(CK2_3DStatic STATIC ${CKRE_STATIC_SOURCES} ${CKRE_PUBLIC_HEADERS} ${CKRE_PRIVATE_HEADERS})
     ckre_configure_target(CK2_3DStatic)
+    if (CKRE_NEEDS_BGFX AND TARGET CKBgfxRasterizerStatic)
+        target_compile_definitions(CK2_3DStatic PRIVATE CKRE_STATIC_BGFX_AUTOREGISTER=1)
+        target_link_libraries(CK2_3DStatic PRIVATE CKBgfxRasterizerStatic)
+    endif ()
     # CK2_3DStatic consumer code not yet rewritten for v2 API
     if (TARGET CK2_3D_shaders)
         add_dependencies(CK2_3DStatic CK2_3D_shaders)
@@ -352,6 +360,38 @@ if (CKRE_BUILD_STATIC)
     if (NOT TARGET CK2_3D)
         add_library(CK2_3D ALIAS CK2_3DStatic)
     endif ()
+endif ()
+
+if (CKRE_BUILD_HEADLESS)
+    set(CKRE_HEADLESS_SOURCES ${CKRE_SOURCES})
+    list(FILTER CKRE_HEADLESS_SOURCES EXCLUDE REGEX "\\.rc$")
+
+    add_library(CK2_3DHeadlessStatic STATIC
+            ${CKRE_HEADLESS_SOURCES}
+            ${CKRE_PUBLIC_HEADERS}
+            ${CKRE_PRIVATE_HEADERS}
+    )
+    ckre_configure_target(CK2_3DHeadlessStatic)
+    target_compile_definitions(CK2_3DHeadlessStatic PRIVATE CKRE_HEADLESS=1)
+    set_target_properties(CK2_3DHeadlessStatic PROPERTIES
+            ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    )
+
+    # Keep this target usable in a process with no graphics stack.  The only
+    # rasterizer implementation it may consume is CKRasterizerLib's NULL
+    # backend; CK2/VxMath and the platform loader library are core runtime
+    # dependencies rather than rendering backends.
+    get_target_property(_ckre_headless_links CK2_3DHeadlessStatic LINK_LIBRARIES)
+    foreach (_ckre_forbidden_link IN ITEMS
+            SDL3::SDL3 bgfx bimg bx shaderc CKBgfxRasterizer CKBgfxRasterizerStatic)
+        if (_ckre_forbidden_link IN_LIST _ckre_headless_links)
+            message(FATAL_ERROR
+                    "CK2_3DHeadlessStatic must not link ${_ckre_forbidden_link}")
+        endif ()
+    endforeach ()
+
+    add_library(CKRenderEngine::Headless ALIAS CK2_3DHeadlessStatic)
+    list(APPEND CKRE_TARGETS CK2_3DHeadlessStatic)
 endif ()
 
 # =============================================================================
@@ -379,6 +419,13 @@ if (CKRE_INSTALL)
 
     if (TARGET CK2_3DStatic)
         install(TARGETS CK2_3DStatic
+                EXPORT CKRenderEngineTargets
+                ARCHIVE DESTINATION lib COMPONENT Development
+        )
+    endif ()
+
+    if (TARGET CK2_3DHeadlessStatic)
+        install(TARGETS CK2_3DHeadlessStatic
                 EXPORT CKRenderEngineTargets
                 ARCHIVE DESTINATION lib COMPONENT Development
         )
