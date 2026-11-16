@@ -18,6 +18,18 @@
 #include "RCKObjectAnimation.h"
 #include "RCKSkin.h"
 
+// BallanceMMO x87-soft headless engine (VX_X87_GAME): the 2002 CK2_3D.dll computes SetOrientation's cross product and
+// its normalise-and-rescale with its own x87 helpers (0xBF80, 0xBEC0, 0xBFF0; CK2_3DX87.cpp); other builds keep the
+// float formulas.
+#if defined(VX_X87_GAME)
+#include "CK2_3DX87.h"
+#define X87_CROSS(a, b) ck2_3d_x87_cross((a), (b))
+#define X87_NORMALIZED_SCALED(v, s) ck2_3d_x87_scaled(ck2_3d_x87_normalized(v), (s))
+#else
+#define X87_CROSS(a, b) CrossProduct((a), (b))
+#define X87_NORMALIZED_SCALED(v, s) (((v) * static_cast<float>(1.0 / static_cast<double>((v).Magnitude()))) * (s))
+#endif
+
 extern int (*g_RayIntersection)(RCKMesh *, VxVector &, VxVector &, VxIntersectionDesc *, CK_RAYINTERSECTION, VxMatrix const &);
 
 CK_CLASSID RCK3dEntity::m_ClassID = CKCID_3DENTITY;
@@ -1523,7 +1535,7 @@ void RCK3dEntity::SetOrientation(const VxVector *Dir, const VxVector *Up, const 
         if (Right) {
             Vx3DRotateVector(&rotRight, Ref->GetWorldMatrix(), Right);
         } else {
-            rotRight = CrossProduct(rotUp, rotDir);
+            rotRight = X87_CROSS(rotUp, rotDir);
         }
 
         m_WorldMatrix[0][0] = (rotRight.x == 0.0f) ? kEps : rotRight.x;
@@ -1543,7 +1555,7 @@ void RCK3dEntity::SetOrientation(const VxVector *Dir, const VxVector *Up, const 
             m_WorldMatrix[0][1] = (Right->y == 0.0f) ? kEps : Right->y;
             m_WorldMatrix[0][2] = (Right->z == 0.0f) ? kEps : Right->z;
         } else {
-            const VxVector cross = CrossProduct(*Up, *Dir);
+            const VxVector cross = X87_CROSS(*Up, *Dir);
             m_WorldMatrix[0][0] = (cross.x == 0.0f) ? kEps : cross.x;
             m_WorldMatrix[0][1] = (cross.y == 0.0f) ? kEps : cross.y;
             m_WorldMatrix[0][2] = (cross.z == 0.0f) ? kEps : cross.z;
@@ -1562,27 +1574,21 @@ void RCK3dEntity::SetOrientation(const VxVector *Dir, const VxVector *Up, const 
     // IDA does this in two steps: normalizedAxis = axis * (1.0 / Magnitude(axis)) ; scaledAxis = normalizedAxis * savedScale.
     {
         const VxVector axis(m_WorldMatrix[0][0], m_WorldMatrix[0][1], m_WorldMatrix[0][2]);
-        const float invMag = static_cast<float>(1.0 / static_cast<double>(axis.Magnitude()));
-        const VxVector normalized = axis * invMag;
-        const VxVector scaled = normalized * prevScale.x;
+        const VxVector scaled = X87_NORMALIZED_SCALED(axis, prevScale.x);
         m_WorldMatrix[0][0] = scaled.x;
         m_WorldMatrix[0][1] = scaled.y;
         m_WorldMatrix[0][2] = scaled.z;
     }
     {
         const VxVector axis(m_WorldMatrix[1][0], m_WorldMatrix[1][1], m_WorldMatrix[1][2]);
-        const float invMag = static_cast<float>(1.0 / static_cast<double>(axis.Magnitude()));
-        const VxVector normalized = axis * invMag;
-        const VxVector scaled = normalized * prevScale.y;
+        const VxVector scaled = X87_NORMALIZED_SCALED(axis, prevScale.y);
         m_WorldMatrix[1][0] = scaled.x;
         m_WorldMatrix[1][1] = scaled.y;
         m_WorldMatrix[1][2] = scaled.z;
     }
     {
         const VxVector axis(m_WorldMatrix[2][0], m_WorldMatrix[2][1], m_WorldMatrix[2][2]);
-        const float invMag = static_cast<float>(1.0 / static_cast<double>(axis.Magnitude()));
-        const VxVector normalized = axis * invMag;
-        const VxVector scaled = normalized * prevScale.z;
+        const VxVector scaled = X87_NORMALIZED_SCALED(axis, prevScale.z);
         m_WorldMatrix[2][0] = scaled.x;
         m_WorldMatrix[2][1] = scaled.y;
         m_WorldMatrix[2][2] = scaled.z;
@@ -2445,9 +2451,15 @@ void RCK3dEntity::GetScale(VxVector *Scale, CKBOOL Local) {
     VxVector axis0 = mat[0];
     VxVector axis1 = mat[1];
     VxVector axis2 = mat[2];
+#if defined(VX_X87_GAME)
+    Scale->x = ck2_3d_x87_magnitude(axis0);
+    Scale->y = ck2_3d_x87_magnitude(axis1);
+    Scale->z = ck2_3d_x87_magnitude(axis2);
+#else
     Scale->x = axis0.Magnitude();
     Scale->y = axis1.Magnitude();
     Scale->z = axis2.Magnitude();
+#endif
 }
 
 static void RCK3dEntity_ConstructMatrix(VxMatrix &dst, const VxVector *pos, const VxVector *scale, const VxQuaternion *quat) {

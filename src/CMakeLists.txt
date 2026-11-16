@@ -135,6 +135,7 @@ set(CKRE_SOURCES
         CKRenderObject.cpp
         CK2dEntity.cpp
         CK3dEntity.cpp
+        CK2_3DX87.cpp
         CKCamera.cpp
         CKLight.cpp
         CKCurvePoint.cpp
